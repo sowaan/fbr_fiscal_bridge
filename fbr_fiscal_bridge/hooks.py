@@ -9,7 +9,6 @@ app_license = "mit"
 # ------------------
 
 # required_apps = []
-
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
 # 	{
@@ -26,8 +25,7 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/fbr_fiscal_bridge/css/fbr_fiscal_bridge.css"
-# app_include_js = "/assets/fbr_fiscal_bridge/js/fbr_fiscal_bridge.js"
-
+# app_include_js = "/assets/fbr_fiscal_bridge/js/pos_offline_submit.js"
 # include js, css files in header of web template
 # web_include_css = "/assets/fbr_fiscal_bridge/css/fbr_fiscal_bridge.css"
 # web_include_js = "/assets/fbr_fiscal_bridge/js/fbr_fiscal_bridge.js"
@@ -90,7 +88,19 @@ app_license = "mit"
 
 # before_uninstall = "fbr_fiscal_bridge.uninstall.before_uninstall"
 # after_uninstall = "fbr_fiscal_bridge.uninstall.after_uninstall"
-
+fixtures = [
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["name", "in", [
+                "Sales Invoice-custom_fbr_fiscal_invoice_number",
+                "POS Profile-custom_pos_id",
+                "Item-custom_pct_code"
+            ]]
+        ],
+        "module": "FBR Fiscal Bridge"
+    }
+]
 # Integration Setup
 # ------------------
 # To set up dependencies/integrations with other apps
@@ -138,12 +148,11 @@ app_license = "mit"
 # Hook on document methods and events
 
 # doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
+#     "Sales Invoice": {
+#         "on_submit": "fbr_fiscal_bridge.fbr_fiscal_bridge.api.fbr_fiscal_component.send_offline_invoice"
+#     }
 # }
+
 
 # Scheduled Tasks
 # ---------------
