@@ -26,6 +26,11 @@ app_license = "mit"
 # include js, css files in header of desk.html
 # app_include_css = "/assets/fbr_fiscal_bridge/css/fbr_fiscal_bridge.css"
 # app_include_js = "/assets/fbr_fiscal_bridge/js/pos_offline_submit.js"
+# include js in POS
+# app_include_js = [
+#     "/assets/fbr_fiscal_bridge/js/pos_fbr_override.js"
+# ]
+# app_include_js = "/assets/fbr_fiscal_bridge/js/qrcode.js"
 # include js, css files in header of web template
 # web_include_css = "/assets/fbr_fiscal_bridge/css/fbr_fiscal_bridge.css"
 # web_include_js = "/assets/fbr_fiscal_bridge/js/fbr_fiscal_bridge.js"
@@ -42,6 +47,7 @@ app_license = "mit"
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {"Sales Invoice" : "public/js/sales_invoice.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -95,12 +101,21 @@ fixtures = [
             ["name", "in", [
                 "Sales Invoice-custom_fbr_fiscal_invoice_number",
                 "POS Profile-custom_pos_id",
-                "Item-custom_pct_code"
+                "Item-custom_pct_code",
+                "Sales Invoice-ntn_no", 
+                "Sales Invoice-fbr_invoice_no",
+                "Sales Invoice-pos_id",
+                "POS Profile-ntn_no",
+                "POS Profile-pos_id",
+                "POS Profile-pos_token",
+                "POS Profile User-fbr_user",
+                "POS Profile-is_fbr"
             ]]
         ],
         "module": "FBR Fiscal Bridge"
     }
 ]
+
 # Integration Setup
 # ------------------
 # To set up dependencies/integrations with other apps
@@ -152,6 +167,11 @@ fixtures = [
 #         "on_submit": "fbr_fiscal_bridge.fbr_fiscal_bridge.api.fbr_fiscal_component.send_offline_invoice"
 #     }
 # }
+# doc_events = {
+# 	"Sales Invoice": {
+# 		"after_insert": "fbr_fiscal_bridge.events.sales_invoice.send_pos_invoice_fbr",
+# 	}
+# }
 
 
 # Scheduled Tasks
@@ -183,9 +203,11 @@ fixtures = [
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "fbr_fiscal_bridge.event.get_events"
-# }
+override_whitelisted_methods = {
+    "posawesome.posawesome.api.invoices.submit_invoice": 
+        "fbr_fiscal_bridge.overrides.submit_invoice.submit_invoice"
+}
+
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
