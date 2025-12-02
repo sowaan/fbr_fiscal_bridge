@@ -6,85 +6,132 @@ import frappe
 from frappe import _
 import json
 import requests
-from frappe.utils import flt # type: ignore
-from pyqrcode import create as qrcreate # type: ignore
+from frappe.utils import flt
+from pyqrcode import create as qrcreate
 
-# def govt_tax_integration(doc, method=None):
-#     send_pos_invoice_fbr(doc)
+
 
 @frappe.whitelist()
 def send_pos_invoice_fbr(doc, method=None, is_admin=False):
-	try:
-		if isinstance(doc, str):
-			doc = json.loads(doc)
+    try:
+        # If doc received as a JSON string
+        if isinstance(doc, str):
+            doc = json.loads(doc)
 
-		if frappe.db.get_value("POS Profile User", {'parent':doc.get('pos_profile'), 'user':frappe.session.user}, "fbr_user") == 1 or is_admin:
-			pos_id, ntn_number, pos_token = frappe.db.get_value('POS Profile' ,doc.get('pos_profile'),['pos_id', 'ntn_no','pos_token'])
-			if  pos_id and pos_token:
-				item_list = []
-				total_qty = 0
-				tax_rate = round((doc.get("total_taxes_and_charges")/doc.get("net_total"))*100,0)
-				for item in doc.get("items"):
-					rate_after_additional_discount = flt(item.get("rate"))*(1-(flt(doc.get("additional_discount_percentage"))/100))
-					amount_after_additional_discount = item.get("qty") * rate_after_additional_discount
-					tax_charged = amount_after_additional_discount*tax_rate/100
+        # These should NEVER go to FBR
+        if doc.get("return_against") and not doc.get("is_pos"):
+            frappe.log_error(f"Skipped FBR API call for auto credit note: {doc.get('name')}",
+                             "FBR Auto Credit Note Skipped")
+            return
 
-					item_list.append({
-						"ItemCode": item.get('item_code'),
-						"ItemName": item.get('item_name'),
-						"Quantity": item.get('qty'),
-						"PCTCode": "11001010",
-						"TaxRate": tax_rate,
-						"SaleValue": rate_after_additional_discount,
-						"TotalAmount": amount_after_additional_discount,
-						"TaxCharged": tax_charged,
-						"Discount": "0.0",
-						"FurtherTax": 0,
-						"InvoiceType": 2,
-						"RefUSIN": None
-					})
-					total_qty += item.get('qty')
+        # FBR user check
+        if frappe.db.get_value("POS Profile User",
+                               {'parent': doc.get('pos_profile'),
+                                'user': frappe.session.user},
+                               "fbr_user") == 1 or is_admin:
 
-				data = {
-					"InvoiceNumber": "",
-					"POSID": pos_id,
-					"USIN": "SALE\/POS\/BEVERLY\/2021\/05\/100361",
-					"DateTime": str(doc.get('posting_date')),
-					"BuyerNTN": ntn_number,
-					"BuyerCNIC": None,
-					"BuyerName": doc.get('customer'),
-					"BuyerPhoneNumber": None,
-					"TotalBillAmount": doc.get('grand_total'),
-					"TotalQuantity": total_qty,
-					"TotalSaleValue": doc.get('net_total'),
-					"TotalTaxCharged": doc.get('total_taxes_and_charges'),
-					"Discount": "0",
-					"FurtherTax": "0",
-					"PaymentMode": 1,
-					"RefUSIN": None,
-					"InvoiceType": 1,
-					"Items": item_list
-				}
+            # Get POS settings
+            pos_id, ntn_number, pos_token = frappe.db.get_value(
+                'POS Profile',
+                doc.get('pos_profile'),
+                ['pos_id', 'ntn_no', 'pos_token']
+            )
+
+            if pos_id and pos_token:
+
+                item_list = []
+                total_qty = 0
+                is_return = doc.get("is_return")
+
+                # Tax rate
+                if doc.get("net_total"):
+                    tax_rate = round(
+                        (doc.get("total_taxes_and_charges") / doc.get("net_total")) * 100,
+                        2
+                    )
+                else:
+                    tax_rate = 0
+
+                for item in doc.get("items"):
+
+                    sign = -1 if is_return else 1
+
+                    qty = sign * item.get("qty")
+                    rate = item.get("rate")
+                    sale_value = sign * rate * item.get("qty")
+                    total_amount = sale_value * (1 + tax_rate / 100)
+                    tax_charged = (sale_value * tax_rate) / 100
+
+                    # Add item row
+                    item_list.append({
+                        "ItemCode": item.get('item_code'),
+                        "ItemName": item.get('item_name'),
+                        "Quantity": qty,
+                        "PCTCode": "11001010",
+                        "TaxRate": tax_rate,
+                        "SaleValue": sale_value,
+                        "TotalAmount": total_amount,
+                        "TaxCharged": tax_charged,
+                        "Discount": "0.0",
+                        "FurtherTax": 0,
+                        "InvoiceType": 2 if not is_return else 3,
+                        "RefUSIN": None
+                    })
+
+                    total_qty += qty
+
+                sign = -1 if is_return else 1
+
+                data = {
+                    "InvoiceNumber": "",
+                    "POSID": pos_id,
+                    "USIN": doc.get("name"),
+                    "DateTime": str(doc.get('posting_date')),
+                    "BuyerNTN": None,
+                    "BuyerCNIC": None,
+                    "BuyerName": None,
+                    "BuyerPhoneNumber": None,
+                    "TotalBillAmount": sign * doc.get('grand_total'),
+                    "TotalQuantity": total_qty,
+                    "TotalSaleValue": sign * doc.get('net_total'),
+                    "TotalTaxCharged": sign * doc.get('total_taxes_and_charges'),
+                    "Discount": "0",
+                    "FurtherTax": "0",
+                    "PaymentMode": 1,
+                    "RefUSIN": None,
+                    "InvoiceType": 2 if not is_return else 3,
+                    "Items": item_list
+                }
+
+                headers = {
+                    "Authorization": "Bearer " + pos_token
+                }
+
+                url = "https://gw.fbr.gov.pk/imsp/v1/api/Live/PostData"
+
+                response = requests.post(url=url, json=data, headers=headers, timeout=10)
+                res_data = response.json()
+                invoice_number = res_data.get("InvoiceNumber")
+
+                frappe.log_error(
+                    f"Payload: {data}\nStatus: {response.status_code}\nResponse: {json.dumps(res_data)}",
+                    "FBR eInvoice Msg"
+                )
+
+                # Save the invoice number
+                set_invoice_number('Sales Invoice', doc.get('name'), invoice_number)
+
+                if invoice_number:
+                    return {"invoice_number": invoice_number, "name": doc.get("name")}
+
+        else:
+            frappe.log_error("User must be FBR User to call FBR API.", "FBR User Error")
+
+    except Exception as e:
+        frappe.log_error(f"FBR eInvoicing Error:\n{frappe.get_traceback()}",
+                         "FBR eInvoicing Error")
 
 
-				url = 'https://gw.fbr.gov.pk/imsp/v1/api/Live/PostData'
-
-				headers={
-					"Authorization": "Bearer " + pos_token
-				}
-				response = requests.post(url=url, json=data, headers=headers, timeout=(10, 60))
-				res_data = response.json()
-
-				invoice_number = res_data.get("InvoiceNumber")
-
-				frappe.log_error(f"Payload Data: {data}\n Status: {response.status_code}\n Response: {json.dumps(res_data)}\n invoice_number : {doc.get('name')}", "FBR eInvoice Msg")
-				set_invoice_number('Sales Invoice', doc.get('name'), invoice_number)
-				if invoice_number:
-					return {"invoice_number": invoice_number, "name":doc.get("name")}
-		else:
-			frappe.log_error("User must be set to FBR User for successful calling FBR eInvoicing api.", "FBR User Error")        
-	except Exception as e:
-		frappe.log_error("FBR eInvoicing Error: \n" + frappe.get_traceback(), "FBR eInvoicing Error")
 
 
 @frappe.whitelist()
