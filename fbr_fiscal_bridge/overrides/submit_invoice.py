@@ -162,19 +162,17 @@ def submit_invoice(invoice, data):
         # Optionally, you can raise an exception here to stop further processing
         # raise frappe.ValidationError("FBR submission failed. Invoice not submitted.")
 
-    # Only proceed with submission if FBR succeeded
-    if not fbr_success:
-        # Return without submitting — invoice remains as draft
-        return {"name": invoice_doc.name, "status": invoice_doc.docstatus, "fbr_error": True}
+    # An FBR failure is logged above and picked up later by repost_invoices_to_fbr,
+    # but it must never leave the invoice stranded as a draft.
 
-    # Set due date (only if FBR succeeded)
+    # Set due date
     if data.get("due_date"):
         frappe.db.set_value(doctype, invoice_doc.name, "due_date", data.get("due_date"), update_modified=False)
 
-    # Background job submission (only if FBR succeeded)
+    # Background job submission
     allow_bg = frappe.db.get_value("POS Profile", invoice_doc.pos_profile, "posa_allow_submissions_in_background_job")
 
-    if allow_bg and fbr_success:
+    if allow_bg:
         invoices_list = frappe.get_all(
             doctype,
             filters={"posa_pos_opening_shift": invoice_doc.posa_pos_opening_shift, "docstatus": 0, "posa_is_printed": 1},
@@ -200,7 +198,11 @@ def submit_invoice(invoice, data):
         invoice_doc.submit()
         redeeming_customer_credit(invoice_doc, data, is_payment_entry, total_cash, cash_account, payments)
 
-    return {"name": invoice_doc.name, "status": invoice_doc.docstatus}
+    return {
+        "name": invoice_doc.name,
+        "status": invoice_doc.docstatus,
+        "fbr_error": not fbr_success,
+    }
 
 
 def submit_in_background_job(kwargs):
