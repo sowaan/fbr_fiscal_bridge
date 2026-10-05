@@ -136,7 +136,9 @@ def send_pos_invoice_fbr(doc, method=None, is_admin=False):
 
 @frappe.whitelist()
 def set_invoice_number(doctype, name, inv):
-	frappe.db.set_value(doctype, name, "fbr_invoice_no", inv)
+	# Don't bump `modified`: submit_invoice() still holds this draft in memory
+	# and submits it right after, which would fail the timestamp check.
+	frappe.db.set_value(doctype, name, "fbr_invoice_no", inv, update_modified=False)
 	generate_fbr_barcode(inv, name)
 	frappe.db.commit()
 

@@ -147,11 +147,16 @@ def submit_invoice(invoice, data):
     try:
         fbr_response = send_pos_invoice_fbr(invoice_doc)
         if fbr_response and fbr_response.get("invoice_number"):
+            # Keep the in-memory doc in step and leave `modified` untouched,
+            # otherwise submit() below fails with a TimestampMismatchError
+            # and would also write a blank fbr_invoice_no back over this one.
+            invoice_doc.fbr_invoice_no = fbr_response.get("invoice_number")
             frappe.db.set_value(
                 invoice_doc.doctype,
                 invoice_doc.name,
                 "fbr_invoice_no",
                 fbr_response.get("invoice_number"),
+                update_modified=False,
             )
             frappe.db.commit()
             fbr_success = True
