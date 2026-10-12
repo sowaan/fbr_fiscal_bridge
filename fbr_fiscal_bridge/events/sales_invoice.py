@@ -52,13 +52,14 @@ def send_pos_invoice_fbr(doc, method=None, is_admin=False):
                 else:
                     tax_rate = 0
 
+                # Returns are sent with the same negative amounts they carry in
+                # ERPNext, so the FBR fee shows as -1 in the portal and
+                # TotalBillAmount still equals TotalSaleValue + TotalTaxCharged.
                 for item in doc.get("items"):
 
-                    sign = -1 if is_return else 1
-
-                    qty = sign * item.get("qty")
+                    qty = item.get("qty")
                     rate = item.get("rate")
-                    sale_value = sign * rate * item.get("qty")
+                    sale_value = rate * qty
                     total_amount = sale_value * (1 + tax_rate / 100)
                     tax_charged = (sale_value * tax_rate) / 100
 
@@ -80,8 +81,6 @@ def send_pos_invoice_fbr(doc, method=None, is_admin=False):
 
                     total_qty += qty
 
-                sign = -1 if is_return else 1
-
                 data = {
                     "InvoiceNumber": "",
                     "POSID": pos_id,
@@ -91,10 +90,10 @@ def send_pos_invoice_fbr(doc, method=None, is_admin=False):
                     "BuyerCNIC": None,
                     "BuyerName": None,
                     "BuyerPhoneNumber": None,
-                    "TotalBillAmount": sign * doc.get('grand_total'),
+                    "TotalBillAmount": doc.get('grand_total'),
                     "TotalQuantity": total_qty,
-                    "TotalSaleValue": sign * doc.get('net_total'),
-                    "TotalTaxCharged": sign * doc.get('total_taxes_and_charges'),
+                    "TotalSaleValue": doc.get('net_total'),
+                    "TotalTaxCharged": doc.get('total_taxes_and_charges'),
                     "Discount": "0",
                     "FurtherTax": "0",
                     "PaymentMode": 1,
